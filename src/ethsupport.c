@@ -63,9 +63,9 @@ static void ethSMBConnect(void)
     int result;
 
     if (gETHPrefix[0] != '\0')
-        sprintf(ethPrefix, "%s%s\\", ethBase, gETHPrefix);
+        snprintf(ethPrefix, sizeof(ethPrefix), "%s%s\\", ethBase, gETHPrefix);
     else
-        strcpy(ethPrefix, ethBase);
+        snprintf(ethPrefix, sizeof(ethPrefix), "%s", ethBase);
 
     // open tcp connection with the server / logon to SMB server
     if (gPCShareAddressIsNetBIOS) {
@@ -110,8 +110,9 @@ static void ethSMBConnect(void)
 
     if ((result = fileXioDevctl(ethBase, SMB_DEVCTL_LOGON, (void *)&logon, sizeof(logon), NULL, 0)) >= 0) {
         // SMB server alive test
-        strcpy(echo.echo, "ALIVE ECHO TEST");
-        echo.len = strlen("ALIVE ECHO TEST");
+        static const char alive_echo[] = "ALIVE ECHO TEST";
+        memcpy(echo.echo, alive_echo, sizeof(alive_echo));
+        echo.len = sizeof(alive_echo) - 1;
 
         if (gPCShareAddressIsNetBIOS) {
             // Since the SMB server can be connected to, update the IP address.
@@ -126,7 +127,11 @@ static void ethSMBConnect(void)
 
             if (gPCShareName[0]) {
                 // connect to the share
-                strcpy(openshare.ShareName, gPCShareName);
+                size_t share_len = strlen(gPCShareName);
+                if (share_len >= sizeof(openshare.ShareName))
+                    share_len = sizeof(openshare.ShareName) - 1;
+                memcpy(openshare.ShareName, gPCShareName, share_len);
+                openshare.ShareName[share_len] = '\0';
 
                 if (fileXioDevctl(ethBase, SMB_DEVCTL_OPENSHARE, (void *)&openshare, sizeof(openshare), NULL, 0) >= 0) {
                     // everything is ok

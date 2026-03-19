@@ -29,7 +29,6 @@ void closeFileBuffer(file_buffer_t *fileBuffer);
 int max(int a, int b);
 int min(int a, int b);
 int fromHex(char digit);
-char toHex(int digit);
 
 enum CONSOLE_REGIONS {
     CONSOLE_REGION_INVALID = -1,

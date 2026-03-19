@@ -368,9 +368,9 @@ static void appLaunchItem(item_list_t *itemList, int id, config_set_t *configSet
     const char *oldPrefix = "mass:";
     const char *newPrefix = "mass?:";
 
-    if (strncmp(filename, oldPrefix, strlen(oldPrefix)) == 0) {
-        size_t oldPrefixLen = strlen(oldPrefix);
-        size_t newPrefixLen = strlen(newPrefix);
+    if (strncmp(filename, oldPrefix, sizeof("mass:") - 1) == 0) {
+        size_t oldPrefixLen = sizeof("mass:") - 1;
+        size_t newPrefixLen = sizeof("mass?:") - 1;
         memmove(filename + newPrefixLen, filename + oldPrefixLen, strlen(filename) - oldPrefixLen + 1);
 
         memcpy(filename, newPrefix, newPrefixLen);
@@ -395,7 +395,7 @@ static void appLaunchItem(item_list_t *itemList, int id, config_set_t *configSet
         char *argv[1];
         close(fd);
 
-        strcpy(partition, "");
+        partition[0] = '\0';
 
         // To keep the necessary device accessible, we will assume the mode that owns the device which contains the file to boot.
         mode = oplPath2Mode(filename);

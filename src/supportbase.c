@@ -8,7 +8,6 @@
 #include "modules/iopcore/common/cdvd_config.h"
 #include "include/cheatman.h"
 #include "include/pggsm.h"
-#include "include/cheatman.h"
 #include "include/ps2cnf.h"
 #include "include/gui.h"
 
@@ -83,50 +82,50 @@ static int GetStartupExecName(const char *path, char *filename, int maxlength)
     const char *key;
     int ret;
 
-    if ((ret = ps2cnfGetBootFile(path, ps2disc_boot)) == 0) {
-        int length = 0;
-        const char *start;
-
-        /* Skip the device name part of the path ("cdrom0:\"). */
-        key = ps2disc_boot;
-
-        for (; *key != ':'; key++) {
-            if (*key == '\0') {
-                LOG("GetStartupExecName: missing ':' (%s).\n", ps2disc_boot);
-                return -1;
-            }
-        }
-
-        ++key;
-        while (*key == '\\') {
-            key++;
-        }
-
-        start = key;
-
-        while ((*key != ';') && (*key != '\0')) {
-            length++;
-            key++;
-        }
-
-        if (length > maxlength) {
-            length = maxlength;
-        }
-
-        if (length == 0) {
-            LOG("GetStartupExecName: serial len 0 ':' (%s).\n", ps2disc_boot);
-            return -1;
-        }
-
-        strncpy(filename, start, length);
-        filename[length] = '\0';
-        LOG("GetStartupExecName: serial len %d %s \n", length, filename);
-
-        return 0;
-    } else {
+    if ((ret = ps2cnfGetBootFile(path, ps2disc_boot)) != 0) {
         LOG("GetStartupExecName: Could not get BOOT2 parameter.\n");
         return ret;
     }
+
+    int length = 0;
+    const char *start;
+
+    /* Skip the device name part of the path ("cdrom0:\"). */
+    key = ps2disc_boot;
+
+    for (; *key != ':'; key++) {
+        if (*key == '\0') {
+            LOG("GetStartupExecName: missing ':' (%s).\n", ps2disc_boot);
+            return -1;
+        }
+    }
+
+    ++key;
+    while (*key == '\\') {
+        key++;
+    }
+
+    start = key;
+
+    while ((*key != ';') && (*key != '\0')) {
+        length++;
+        key++;
+    }
+
+    if (length > maxlength) {
+        length = maxlength;
+    }
+
+    if (length == 0) {
+        LOG("GetStartupExecName: serial len 0 ':' (%s).\n", ps2disc_boot);
+        return -1;
+    }
+
+    strncpy(filename, start, length);
+    filename[length] = '\0';
+    LOG("GetStartupExecName: serial len %d %s \n", length, filename);
+
+    return 0;
 }
 
 static void freeISOGameListCache(struct game_cache_list *cache);
@@ -140,39 +139,41 @@ static int loadISOGameListCache(const char *path, struct game_cache_list *cache)
 
     freeISOGameListCache(cache);
 
-    sprintf(filename, "%s/games.bin", path);
+    snprintf(filename, sizeof(filename), "%s/games.bin", path);
     file = fopen(filename, "rb");
-    if (file != NULL) {
-        fseek(file, 0, SEEK_END);
-        size = ftell(file);
-        rewind(file);
+    if (file == NULL)
+        return ENOENT;
 
-        count = size / sizeof(base_game_info_t);
-        if (count > 0) {
-            games = memalign(64, count * sizeof(base_game_info_t));
-            if (games != NULL) {
-                if (fread(games, sizeof(base_game_info_t), count, file) == count) {
-                    LOG("loadISOGameListCache: %d games loaded.\n", count);
-                    cache->count = count;
-                    cache->games = games;
-                    result = 0;
-                } else {
-                    LOG("loadISOGameListCache: I/O error.\n");
-                    free(games);
-                    result = EIO;
-                }
-            } else {
-                LOG("loadISOGameListCache: failed to allocate memory.\n");
-                result = ENOMEM;
-            }
-        } else {
-            result = -1; // Empty file (should not happen)
-        }
+    fseek(file, 0, SEEK_END);
+    size = ftell(file);
+    rewind(file);
 
+    count = size / sizeof(base_game_info_t);
+    if (count <= 0) {
         fclose(file);
-    } else {
-        result = ENOENT;
+        return -1; // Empty file (should not happen)
     }
+
+    games = memalign(64, count * sizeof(base_game_info_t));
+    if (games == NULL) {
+        fclose(file);
+        LOG("loadISOGameListCache: failed to allocate memory.\n");
+        return ENOMEM;
+    }
+
+    if (fread(games, sizeof(base_game_info_t), count, file) != count) {
+        fclose(file);
+        LOG("loadISOGameListCache: I/O error.\n");
+        free(games);
+        return EIO;
+    }
+
+    fclose(file);
+
+    LOG("loadISOGameListCache: %d games loaded.\n", count);
+    cache->count = count;
+    cache->games = games;
+    result = 0;
 
     return result;
 }
@@ -230,7 +231,7 @@ static int updateISOGameList(const char *path, const struct game_cache_list *cac
     LOG("updateISOGameList: caching new game list.\n");
 
     result = 0;
-    sprintf(filename, "%s/games.bin", path);
+    snprintf(filename, sizeof(filename), "%s/games.bin", path);
     if ((head != NULL) && (count > 0)) {
         list = (base_game_info_t *)memalign(64, sizeof(base_game_info_t) * count);
 
@@ -295,7 +296,11 @@ static int scanForISO(char *path, char type, struct game_list_t **glist)
 
     if ((dir = opendir(path)) != NULL) {
         size_t base_path_len = strlen(path);
-        strcpy(fullpath, path);
+        if (base_path_len + 1 >= sizeof(fullpath)) {
+            closedir(dir);
+            goto done;
+        }
+        memcpy(fullpath, path, base_path_len + 1);
         fullpath[base_path_len] = '/';
 
         while ((dirent = readdir(dir)) != NULL) {
@@ -305,7 +310,10 @@ static int scanForISO(char *path, char type, struct game_list_t **glist)
             if (format <= 0 || NameLen > ISO_GAME_NAME_MAX)
                 continue; // Skip files that cannot be supported properly.
 
-            strcpy(fullpath + base_path_len + 1, dirent->d_name);
+            size_t name_len = strlen(dirent->d_name);
+            if (base_path_len + 1 + name_len + 1 > sizeof(fullpath))
+                continue;
+            memcpy(fullpath + base_path_len + 1, dirent->d_name, name_len + 1);
 
             struct game_list_t *next = malloc(sizeof(struct game_list_t));
             if (!next)
@@ -339,7 +347,8 @@ static int scanForISO(char *path, char type, struct game_list_t **glist)
                     continue;
                 }
 
-                strcpy(game->startup, startup);
+                strncpy(game->startup, startup, sizeof(game->startup) - 1);
+                game->startup[sizeof(game->startup) - 1] = '\0';
                 strncpy(game->name, dirent->d_name, NameLen);
                 game->name[NameLen] = '\0';
                 strncpy(game->extension, &dirent->d_name[NameLen], sizeof(game->extension) - 1);
@@ -357,7 +366,7 @@ static int scanForISO(char *path, char type, struct game_list_t **glist)
         }
         closedir(dir);
     }
-
+done:
     if (cacheLoaded) {
         updateISOGameList(path, &cache, *glist, count);
         freeISOGameListCache(&cache);

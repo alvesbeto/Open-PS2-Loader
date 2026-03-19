@@ -1339,7 +1339,7 @@ static void compatUpdate(item_list_t *support, unsigned char mode, config_set_t 
                                 hasMtime = 0;
                             }
 
-                            sprintf(uri, OPL_COMPAT_HTTP_URI, startup, device);
+                            snprintf(uri, sizeof(uri), OPL_COMPAT_HTTP_URI, startup, device);
                             for (retries = OPL_COMPAT_HTTP_RETRIES; !CompatUpdateStopFlag && retries > 0; retries--) {
                                 length = HTTP_IOBUF_SIZE;
                                 result = HttpSendGetRequest(HttpSocket, OPL_USER_AGENT, OPL_COMPAT_HTTP_HOST, &ConnMode, hasMtime ? mtime : NULL, uri, HttpBuffer, &length);
@@ -1516,7 +1516,7 @@ static int loadLwnbdSvr(void)
     /* compat stuff for user not providing name export (useless when there was only one export) */
     ret = strlen(gExportName);
     if (ret == 0)
-        strcpy(config.defaultexport, "hdd0");
+        memcpy(config.defaultexport, "hdd0", sizeof("hdd0"));
     else
         strcpy(config.defaultexport, gExportName);
 

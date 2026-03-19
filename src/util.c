@@ -434,12 +434,6 @@ int fromHex(char digit)
         return -1;
 }
 
-static const char htab[16] = "0123456789ABCDEF";
-char toHex(int digit)
-{
-    return htab[digit & 0x0F];
-}
-
 static short int ConsoleRegion = CONSOLE_REGION_INVALID;
 static char SystemDataFolderPath[] = "BRDATA-SYSTEM";
 static char SystemFolderLetter = 'R';
@@ -494,25 +488,6 @@ char GetSystemFolderLetter(void)
     return SystemFolderLetter;
 }
 
-int GetSystemRegion(void)
-{
-    return ConsoleRegion;
-}
-
-void logfile(char *text)
-{
-    int fd = open("mass:/opl_log.txt", O_APPEND | O_CREAT | O_WRONLY);
-    write(fd, text, strlen(text));
-    close(fd);
-}
-
-void logbuffer(char *path, void *buf, size_t size)
-{
-    int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY);
-    write(fd, buf, size);
-    close(fd);
-}
-
 int CheckPS2Logo(int fd, u32 lba)
 {
     u8 logo[12 * 2048] ALIGNED(64);
@@ -546,35 +521,37 @@ int CheckPS2Logo(int fd, u32 lba)
         w = (ziso_read_sector(logo, 0, 12) == 12);
     }
 
-    if (w) {
-        u8 key = logo[0];
-        if (logo[0] != 0) {
-            for (j = 0; j < (12 * 2048); j++) {
-                logo[j] ^= key;
-                logo[j] = (logo[j] << 3) | (logo[j] >> 5);
-            }
-            for (j = 0; j < (12 * 2048); j++) {
-                ps2logochecksum += (u32)logo[j];
-            }
-            // PS2LOGO NTSC Checksum = 0x120519
-            // PS2LOGO PAL  Checksum = 0x1555AB
-            snprintf(text, sizeof(text), "%s Disc PS2 Logo(checksum 0x%06X) & %s console ", ((ps2logochecksum == 0x1555AB) ? "PAL" : "NTSC"), ps2logochecksum, ((ConsoleRegion == CONSOLE_REGION_EUROPE) ? "PAL" : "NTSC"));
-            if (((ps2logochecksum == 0x1555AB) && (ConsoleRegion == CONSOLE_REGION_EUROPE)) || ((ps2logochecksum == 0x120519) && (ConsoleRegion != CONSOLE_REGION_EUROPE))) {
-                ValidPS2Logo = 1;
-                strcat(text, "match.");
-            } else {
-                strcat(text, "don't match!");
-            }
-            if (gEnableDebug)
-                guiWarning(text, 12);
-        } else {
-            if (gEnableDebug)
-                guiWarning("Not a valid PS2 Logo first byte!", 12);
-        }
-    } else {
+    if (!w) {
         if (gEnableDebug)
             guiWarning("Error reading first 12 disc sectors (PS2 Logo)!", 25);
+        return 0;
     }
+
+    u8 key = logo[0];
+    if (key == 0) {
+        if (gEnableDebug)
+            guiWarning("Not a valid PS2 Logo first byte!", 12);
+        return 0;
+    }
+
+    for (j = 0; j < (12 * 2048); j++) {
+        logo[j] ^= key;
+        logo[j] = (logo[j] << 3) | (logo[j] >> 5);
+    }
+    for (j = 0; j < (12 * 2048); j++) {
+        ps2logochecksum += (u32)logo[j];
+    }
+    // PS2LOGO NTSC Checksum = 0x120519
+    // PS2LOGO PAL  Checksum = 0x1555AB
+    snprintf(text, sizeof(text), "%s Disc PS2 Logo(checksum 0x%06X) & %s console ", ((ps2logochecksum == 0x1555AB) ? "PAL" : "NTSC"), ps2logochecksum, ((ConsoleRegion == CONSOLE_REGION_EUROPE) ? "PAL" : "NTSC"));
+    if (((ps2logochecksum == 0x1555AB) && (ConsoleRegion == CONSOLE_REGION_EUROPE)) || ((ps2logochecksum == 0x120519) && (ConsoleRegion != CONSOLE_REGION_EUROPE))) {
+        ValidPS2Logo = 1;
+        snprintf(text + strlen(text), sizeof(text) - strlen(text), "match.");
+    } else {
+        snprintf(text + strlen(text), sizeof(text) - strlen(text), "don't match!");
+    }
+    if (gEnableDebug)
+        guiWarning(text, 12);
     return ValidPS2Logo;
 }
 
@@ -601,6 +578,10 @@ int sysDeleteFolder(const char *folder)
                 continue;
 
             path = malloc(strlen(folder) + strlen(dirent->d_name) + 2);
+            if (path == NULL) {
+                result = -ENOMEM;
+                break;
+            }
             sprintf(path, "%s/%s", folder, dirent->d_name);
 
             if (dirent->d_type == DT_DIR) {
@@ -655,7 +636,8 @@ int sysDeleteFolder(const char *folder)
 
         if (result >= 0) {
             result = rmdir(folder);
-            LOG("sysDeleteFolder: failed to rmdir %s: %d\n", folder, result);
+            if (result < 0)
+                LOG("sysDeleteFolder: failed to rmdir %s: %d\n", folder, result);
         }
     }
 

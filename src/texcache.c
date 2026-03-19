@@ -67,19 +67,15 @@ static void cacheClearItem(cache_entry_t *item, int freeTxt)
     }
 
     memset(item, 0, sizeof(cache_entry_t));
-    item->texture.Mem = NULL;
-    item->texture.Vram = 0;
-    item->texture.Clut = NULL;
-    item->texture.VramClut = 0;
     item->texture.ClutStorageMode = GS_CLUT_STORAGE_CSM1; // Default
-    item->qr = NULL;
     item->lastUsed = -1;
-    item->UID = 0;
 }
 
 image_cache_t *cacheInitCache(int userId, const char *prefix, int isPrefixRelative, const char *suffix, int count)
 {
     image_cache_t *cache = (image_cache_t *)malloc(sizeof(image_cache_t));
+    if (cache == NULL)
+        return NULL;
     cache->userId = userId;
     cache->count = count;
     cache->prefix = NULL;
@@ -87,14 +83,29 @@ image_cache_t *cacheInitCache(int userId, const char *prefix, int isPrefixRelati
     if (prefix) {
         length = strlen(prefix) + 1;
         cache->prefix = (char *)malloc(length * sizeof(char));
+        if (cache->prefix == NULL) {
+            free(cache);
+            return NULL;
+        }
         memcpy(cache->prefix, prefix, length);
     }
     cache->isPrefixRelative = isPrefixRelative;
     length = strlen(suffix) + 1;
     cache->suffix = (char *)malloc(length * sizeof(char));
+    if (cache->suffix == NULL) {
+        free(cache->prefix);
+        free(cache);
+        return NULL;
+    }
     memcpy(cache->suffix, suffix, length);
     cache->nextUID = 1;
     cache->content = (cache_entry_t *)malloc(count * sizeof(cache_entry_t));
+    if (cache->content == NULL) {
+        free(cache->suffix);
+        free(cache->prefix);
+        free(cache);
+        return NULL;
+    }
 
     int i;
     for (i = 0; i < count; ++i)
@@ -154,12 +165,16 @@ GSTEXTURE *cacheGetTexture(image_cache_t *cache, item_list_t *list, int *cacheId
     }
 
     if (oldestEntry) {
-        load_image_request_t *req = malloc(sizeof(load_image_request_t) + strlen(value) + 1);
+        size_t value_len = strlen(value);
+        load_image_request_t *req = malloc(sizeof(load_image_request_t) + value_len + 1);
+        if (!req)
+            return NULL;
+
         req->cache = cache;
         req->entry = oldestEntry;
         req->list = list;
         req->value = (char *)req + sizeof(load_image_request_t);
-        strcpy(req->value, value);
+        memcpy(req->value, value, value_len + 1);
         req->cacheUID = cache->nextUID;
 
         cacheClearItem(oldestEntry, 1);
